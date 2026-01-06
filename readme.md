@@ -3,7 +3,10 @@
 
 
 Welcome to the Nike Sales Analysis Dashboard repository! This comprehensive project leverages advanced machine learning techniques, neural network forecasting, and interactive data visualization to deliver actionable insights into Nike's sales performance, trends, and future projections.
+ 
+ <img src="https://github.com/LakshyaTangri/Nike-Sales-Analysis-Dashboard/blob/main/dashboards/Screenshot%202026-01-06%20060505.png" alt="Sales Dashboard" width="500"/>
 
+ <img src="https://github.com/LakshyaTangri/Nike-Sales-Analysis-Dashboard/blob/main/dashboards/Screenshot%202026-01-06%20060451.png" alt="Sales Dashboard" width="500"/>
 ---
 
 ## 🎯 OBJECTIVE
