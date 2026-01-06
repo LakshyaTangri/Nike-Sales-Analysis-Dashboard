@@ -5,6 +5,8 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from pathlib import Path
 from tensorflow.keras.models import load_model
+from sklearn.preprocessing import StandardScaler
+from sklearn.metrics import mean_absolute_error, r2_score
 import numpy as np
 
 st.set_page_config(
@@ -17,84 +19,57 @@ st.set_page_config(
 # Custom CSS for Nike dark theme
 st.markdown("""
 <style>
-    /* App background - Nike black */
     .stApp {
         background-color: #000000;
         color: #ffffff;
     }
-
-    /* Main content container */
     .block-container {
         padding-top: 2rem;
         padding-bottom: 2rem;
         color: #ffffff;
     }
-
-    /* Sidebar - Dark gray */
     [data-testid="stSidebar"] {
         background-color: #111111;
         color: #ffffff;
     }
-
     [data-testid="stSidebar"] [data-testid="stMarkdownContainer"] {
         color: #ffffff;
     }
-
-    /* Headers */
     h1, h2, h3, h4, h5, h6 {
         color: #ffffff !important;
         font-weight: 700;
     }
-
-    /* Metrics */
     [data-testid="stMetricValue"] {
         font-size: 32px;
         font-weight: 700;
         color: #ffffff;
     }
-
     [data-testid="stMetricLabel"] {
         color: #cccccc;
         font-weight: 500;
         font-size: 14px;
     }
-
     [data-testid="stMetricDelta"] {
         color: #10b981;
     }
-
-    /* Metric containers */
     [data-testid="metric-container"] {
         background-color: #1a1a1a;
         border: 1px solid #333333;
         border-radius: 8px;
         padding: 1.5rem 1rem;
     }
-
-    /* Divider */
     hr {
         border-color: #333333;
         margin: 2rem 0;
     }
-
-    /* Info boxes */
     .stAlert {
         background-color: #1a1a1a;
         color: #ffffff;
         border-left: 4px solid #3b82f6;
     }
-
-    /* Slider */
-    .stSlider {
-        color: #ffffff;
-    }
-
-    /* Select boxes and inputs */
-    .stSelectbox label, .stDateInput label {
+    .stSelectbox label, .stDateInput label, .stSlider label {
         color: #ffffff !important;
     }
-
-    /* Download button */
     .stDownloadButton button {
         background-color: #ffffff;
         color: #000000;
@@ -103,20 +78,18 @@ st.markdown("""
         padding: 0.5rem 2rem;
         border-radius: 4px;
     }
-
     .stDownloadButton button:hover {
         background-color: #f5f5f5;
-        border: none;
     }
-
-    /* Dataframe styling */
-    .stDataFrame {
-        border: 1px solid #333333;
-    }
-
-    /* Text color fix for all elements */
     p, label, span {
         color: #ffffff;
+    }
+    .forecast-metric {
+        background-color: #1a1a1a;
+        border: 2px solid #00ff00;
+        border-radius: 8px;
+        padding: 1rem;
+        margin: 0.5rem 0;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -128,33 +101,98 @@ def load_data():
     data_path = BASE_DIR / "data" / "nike_sales.csv"
 
     data = pd.read_csv(data_path)
-
-    # Force datetime conversion
-    data["Invoice Date"] = pd.to_datetime(
-        data["Invoice Date"],
-        errors="coerce"
-    )
-
-    # Drop rows with invalid dates
+    data["Invoice Date"] = pd.to_datetime(data["Invoice Date"], errors="coerce")
     data = data.dropna(subset=["Invoice Date"])
 
     data["Year"] = data["Invoice Date"].dt.year
     data["Month"] = data["Invoice Date"].dt.month
+    data["Quarter"] = data["Invoice Date"].dt.quarter
     data["Month-Year"] = data["Invoice Date"].dt.to_period("M").astype(str)
 
     return data
 
 
-df = load_data()
-
 @st.cache_resource
 def load_forecast_model():
+    """Load the trained neural network model"""
     BASE_DIR = Path(__file__).resolve().parent.parent
-    model_path = BASE_DIR / "models" / "nn_sales_forecast.h5"
-    return load_model(model_path)
+
+    # Try the fixed model first, fall back to original
+    model_paths = [
+        BASE_DIR / "models" / "nn_sales_forecast_fixed.keras",
+        BASE_DIR / "models" / "nn_sales_forecast.h5"
+    ]
+
+    for model_path in model_paths:
+        if model_path.exists():
+            try:
+                return load_model(model_path)
+            except Exception as e:
+                st.sidebar.warning(f"Could not load {model_path.name}: {str(e)}")
+                continue
+
+    return None
+
+
+def prepare_model_features(data):
+    """Prepare features exactly as done during training"""
+    # Basic cleaning
+    data = data[data["Units Sold"] > 0]
+    data = data[data["Total Sales"] > 0]
+
+    # Monthly aggregation
+    monthly_df = (
+        data.groupby(["Year", "Month", "Quarter"])
+        .agg({
+            "Units Sold": "sum",
+            "Total Sales": "sum",
+            "Price per Unit": "mean"
+        })
+        .reset_index()
+    )
+
+    # Prepare features
+    feature_cols = ["Units Sold", "Price per Unit", "Month", "Quarter"]
+    X = monthly_df[feature_cols].values
+    y = monthly_df["Total Sales"].values
+
+    # Scale features using StandardScaler (same as training)
+    scaler_X = StandardScaler()
+    X_scaled = scaler_X.fit_transform(X)
+
+    # Scale target
+    scaler_y = StandardScaler()
+    y_scaled = scaler_y.fit_transform(y.reshape(-1, 1)).ravel()
+
+    return X_scaled, y, monthly_df, scaler_y
+
+
+def generate_future_features(last_features, months_ahead, scaler_X):
+    """Generate features for future predictions"""
+    future_features = []
+    current = last_features.copy()
+
+    for i in range(months_ahead):
+        # Increment month (cyclical)
+        month_idx = 2  # Month is the 3rd feature
+        current[month_idx] = (current[month_idx] * 12 + 1) % 12 / 12
+
+        # Update quarter based on month
+        quarter_idx = 3
+        month_val = int(current[month_idx] * 12)
+        current[quarter_idx] = ((month_val - 1) // 3 + 1) / 4
+
+        future_features.append(current.copy())
+
+    return np.array(future_features)
+
+
+# Load data
+df = load_data()
 
 # Sidebar filters
 with st.sidebar:
+    st.image("https://upload.wikimedia.org/wikipedia/commons/a/a6/Logo_NIKE.svg", width=100)
     st.header("🎯 Filters")
 
     # Date range filter
@@ -176,6 +214,13 @@ with st.sidebar:
     products = ["All"] + sorted(df["Product"].unique().tolist())
     selected_product = st.selectbox("Product", products)
 
+    # Sales Method filter
+    if "Sales Method" in df.columns:
+        methods = ["All"] + sorted(df["Sales Method"].unique().tolist())
+        selected_method = st.selectbox("Sales Method", methods)
+    else:
+        selected_method = "All"
+
     st.divider()
     st.info("💡 Use filters to drill down into specific segments")
 
@@ -194,29 +239,8 @@ if selected_region != "All":
 if selected_product != "All":
     filtered_df = filtered_df[filtered_df["Product"] == selected_product]
 
-def prepare_forecast_data(data):
-    monthly = (
-        data.groupby(["Year", "Month"])
-        .agg({
-            "Units Sold": "sum",
-            "Price per Unit": "mean",
-            "Total Sales": "sum"
-        })
-        .reset_index()
-        .sort_values(["Year", "Month"])
-    )
-
-    # Scale features manually (same logic as training)
-    monthly["Units Sold"] = monthly["Units Sold"] / monthly["Units Sold"].max()
-    monthly["Price per Unit"] = monthly["Price per Unit"] / monthly["Price per Unit"].max()
-    monthly["Month"] = monthly["Month"] / 12
-    monthly["Quarter"] = ((monthly["Month"] * 12 - 1) // 3 + 1) / 4
-
-    X = monthly[["Units Sold", "Price per Unit", "Month", "Quarter"]]
-    y = monthly["Total Sales"]
-
-    return X, y, monthly
-
+if selected_method != "All" and "Sales Method" in filtered_df.columns:
+    filtered_df = filtered_df[filtered_df["Sales Method"] == selected_method]
 
 # Main dashboard
 st.title("📊 Nike Sales Performance Dashboard")
@@ -231,11 +255,21 @@ total_units = filtered_df["Units Sold"].sum()
 avg_price = filtered_df["Price per Unit"].mean()
 total_orders = len(filtered_df)
 
+# Calculate growth rates
+current_month = filtered_df[filtered_df["Invoice Date"] == filtered_df["Invoice Date"].max()]
+prev_month = filtered_df[filtered_df["Invoice Date"] == filtered_df["Invoice Date"].max() - pd.DateOffset(months=1)]
+
+if len(prev_month) > 0:
+    revenue_growth = ((current_month["Total Sales"].sum() - prev_month["Total Sales"].sum()) /
+                      prev_month["Total Sales"].sum() * 100)
+else:
+    revenue_growth = 0
+
 with col1:
     st.metric(
         "Total Revenue",
         f"${total_revenue:,.0f}",
-        delta=f"{(total_revenue / df['Total Sales'].sum() * 100):.1f}% of total"
+        delta=f"{revenue_growth:+.1f}% MoM"
     )
 
 with col2:
@@ -249,7 +283,7 @@ with col3:
     st.metric(
         "Avg Price per Unit",
         f"${avg_price:.2f}",
-        delta=f"${avg_price - df['Price per Unit'].mean():.2f}"
+        delta=f"${avg_price - df['Price per Unit'].mean():+.2f}"
     )
 
 with col4:
@@ -313,24 +347,10 @@ with col1:
         font=dict(color="#ffffff")
     )
 
-    fig.update_xaxes(
-        showgrid=True,
-        gridwidth=1,
-        gridcolor='#333333',
-        color="#ffffff"
-    )
-    fig.update_yaxes(
-        showgrid=True,
-        gridwidth=1,
-        gridcolor='#333333',
-        secondary_y=False,
-        color="#ffffff"
-    )
-    fig.update_yaxes(
-        showgrid=False,
-        secondary_y=True,
-        color="#ffffff"
-    )
+    fig.update_xaxes(showgrid=True, gridwidth=1, gridcolor='#333333', color="#ffffff")
+    fig.update_yaxes(showgrid=True, gridwidth=1, gridcolor='#333333', secondary_y=False, color="#ffffff",
+                     title="Revenue ($)")
+    fig.update_yaxes(showgrid=False, secondary_y=True, color="#ffffff", title="Units")
 
     st.plotly_chart(fig, use_container_width=True)
 
@@ -402,20 +422,9 @@ with col1:
         font=dict(color="#ffffff")
     )
 
-    fig3.update_traces(
-        hovertemplate='<b>%{y}</b><br>Revenue: $%{x:,.0f}<extra></extra>'
-    )
-
-    fig3.update_xaxes(
-        showgrid=True,
-        gridwidth=1,
-        gridcolor='#333333',
-        color="#ffffff"
-    )
-    fig3.update_yaxes(
-        showgrid=False,
-        color="#ffffff"
-    )
+    fig3.update_traces(hovertemplate='<b>%{y}</b><br>Revenue: $%{x:,.0f}<extra></extra>')
+    fig3.update_xaxes(showgrid=True, gridwidth=1, gridcolor='#333333', color="#ffffff")
+    fig3.update_yaxes(showgrid=False, color="#ffffff")
 
     st.plotly_chart(fig3, use_container_width=True)
 
@@ -452,16 +461,8 @@ with col2:
             font=dict(color="#ffffff")
         )
 
-        fig4.update_xaxes(
-            showgrid=False,
-            color="#ffffff"
-        )
-        fig4.update_yaxes(
-            showgrid=True,
-            gridwidth=1,
-            gridcolor='#333333',
-            color="#ffffff"
-        )
+        fig4.update_xaxes(showgrid=False, color="#ffffff")
+        fig4.update_yaxes(showgrid=True, gridwidth=1, gridcolor='#333333', color="#ffffff")
 
         st.plotly_chart(fig4, use_container_width=True)
     else:
@@ -469,10 +470,224 @@ with col2:
 
 st.markdown("---")
 
+# AI-Powered Sales Forecast Section
+st.subheader("🔮 AI-Powered Sales Forecast")
+st.markdown("*Neural network predictions based on historical patterns*")
+
+model = load_forecast_model()
+
+if model is not None:
+    try:
+        # Prepare data for forecasting
+        X_scaled, y_actual, monthly_df, scaler_y = prepare_model_features(filtered_df)
+
+        # Make predictions on historical data
+        historical_preds_scaled = model.predict(X_scaled, verbose=0)
+        historical_preds = scaler_y.inverse_transform(historical_preds_scaled).ravel()
+
+        # Calculate model accuracy metrics
+        mae = mean_absolute_error(y_actual, historical_preds)
+        r2 = r2_score(y_actual, historical_preds)
+        mape = np.mean(np.abs((y_actual - historical_preds) / y_actual)) * 100
+
+        # Display model performance
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            st.metric("Model Accuracy (R²)", f"{r2:.2%}")
+        with col2:
+            st.metric("Mean Absolute Error", f"${mae:,.0f}")
+        with col3:
+            st.metric("Avg Error", f"{mape:.1f}%")
+
+        st.markdown("---")
+
+        # Forecast controls
+        col1, col2 = st.columns([3, 1])
+
+        with col1:
+            forecast_months = st.slider(
+                "Forecast Horizon (months)",
+                min_value=1,
+                max_value=12,
+                value=6,
+                help="Select how many months ahead to forecast"
+            )
+
+        with col2:
+            st.markdown("<br>", unsafe_allow_html=True)
+            show_confidence = st.checkbox("Show confidence interval", value=True)
+
+        # Generate future predictions
+        last_features = X_scaled[-1]
+        future_features = generate_future_features(last_features, forecast_months, None)
+
+        future_preds_scaled = model.predict(future_features, verbose=0)
+        future_preds = scaler_y.inverse_transform(future_preds_scaled).ravel()
+
+        # Create future date range
+        last_date = pd.to_datetime(
+            f"{int(monthly_df.iloc[-1]['Year'])}-{int(monthly_df.iloc[-1]['Month'])}-01"
+        )
+        future_dates = pd.date_range(start=last_date, periods=forecast_months + 1, freq='MS')[1:]
+
+        # Historical dates
+        historical_dates = pd.to_datetime(
+            monthly_df["Year"].astype(str) + "-" + monthly_df["Month"].astype(str) + "-01"
+        )
+
+        # Create forecast visualization
+        fig_forecast = go.Figure()
+
+        # Actual historical sales
+        fig_forecast.add_trace(go.Scatter(
+            x=historical_dates,
+            y=y_actual,
+            name="Actual Sales",
+            line=dict(color="#ffffff", width=3),
+            mode="lines+markers",
+            marker=dict(size=8)
+        ))
+
+        # Predicted historical sales
+        fig_forecast.add_trace(go.Scatter(
+            x=historical_dates,
+            y=historical_preds,
+            name="Model Prediction",
+            line=dict(color="#00ff00", width=2, dash="dot"),
+            mode="lines"
+        ))
+
+        # Future forecast
+        fig_forecast.add_trace(go.Scatter(
+            x=future_dates,
+            y=future_preds,
+            name="Forecast",
+            line=dict(color="#00ff00", width=4),
+            mode="lines+markers",
+            marker=dict(size=10, symbol="star")
+        ))
+
+        # Add confidence interval if requested
+        if show_confidence:
+            # Simple confidence interval based on historical error
+            std_error = np.std(y_actual - historical_preds)
+            upper_bound = future_preds + 1.96 * std_error
+            lower_bound = future_preds - 1.96 * std_error
+
+            fig_forecast.add_trace(go.Scatter(
+                x=future_dates,
+                y=upper_bound,
+                mode="lines",
+                line=dict(width=0),
+                showlegend=False,
+                hoverinfo="skip"
+            ))
+
+            fig_forecast.add_trace(go.Scatter(
+                x=future_dates,
+                y=lower_bound,
+                mode="lines",
+                line=dict(width=0),
+                fillcolor="rgba(0, 255, 0, 0.1)",
+                fill="tonexty",
+                name="95% Confidence",
+                hoverinfo="skip"
+            ))
+
+        fig_forecast.update_layout(
+            height=500,
+            plot_bgcolor="#000000",
+            paper_bgcolor="#000000",
+            font=dict(color="#ffffff"),
+            hovermode="x unified",
+            legend=dict(
+                orientation="h",
+                yanchor="bottom",
+                y=1.02,
+                xanchor="right",
+                x=1
+            ),
+            xaxis_title="Date",
+            yaxis_title="Revenue ($)"
+        )
+
+        fig_forecast.update_xaxes(
+            showgrid=True,
+            gridcolor="#333333",
+            color="#ffffff"
+        )
+
+        fig_forecast.update_yaxes(
+            showgrid=True,
+            gridcolor="#333333",
+            color="#ffffff"
+        )
+
+        st.plotly_chart(fig_forecast, use_container_width=True)
+
+        # Forecast summary table
+        st.markdown("#### 📊 Forecast Summary")
+
+        forecast_df = pd.DataFrame({
+            "Month": future_dates.strftime("%B %Y"),
+            "Predicted Sales": [f"${x:,.0f}" for x in future_preds],
+            "Growth vs Last Month": [""] + [
+                f"{((future_preds[i] - future_preds[i - 1]) / future_preds[i - 1] * 100):+.1f}%"
+                for i in range(1, len(future_preds))]
+        })
+
+        st.dataframe(forecast_df, use_container_width=True, hide_index=True)
+
+        # Key insights
+        st.markdown("#### 💡 Key Insights")
+
+        total_forecast = sum(future_preds)
+        avg_forecast = np.mean(future_preds)
+        trend = "increasing" if future_preds[-1] > future_preds[0] else "decreasing"
+        trend_pct = abs((future_preds[-1] - future_preds[0]) / future_preds[0] * 100)
+
+        col1, col2, col3 = st.columns(3)
+
+        with col1:
+            st.markdown(f"""
+            <div class="forecast-metric">
+                <h4 style="margin:0; color:#00ff00;">Total Forecast Revenue</h4>
+                <h2 style="margin:0;">${total_forecast:,.0f}</h2>
+                <p style="margin:0; color:#888;">Next {forecast_months} months</p>
+            </div>
+            """, unsafe_allow_html=True)
+
+        with col2:
+            st.markdown(f"""
+            <div class="forecast-metric">
+                <h4 style="margin:0; color:#00ff00;">Avg Monthly Revenue</h4>
+                <h2 style="margin:0;">${avg_forecast:,.0f}</h2>
+                <p style="margin:0; color:#888;">Projected average</p>
+            </div>
+            """, unsafe_allow_html=True)
+
+        with col3:
+            st.markdown(f"""
+            <div class="forecast-metric">
+                <h4 style="margin:0; color:#00ff00;">Trend</h4>
+                <h2 style="margin:0;">{trend_pct:.1f}% {trend}</h2>
+                <p style="margin:0; color:#888;">Over forecast period</p>
+            </div>
+            """, unsafe_allow_html=True)
+
+    except Exception as e:
+        st.error(f"Error generating forecast: {str(e)}")
+        st.info("Please ensure the model was trained with the correct data format.")
+else:
+    st.warning("⚠️ Forecast model not found. Please train the model first by running `sales_forecasting_nn_fixed.py`")
+    st.info(
+        "The model file should be located at `models/nn_sales_forecast_fixed.keras` or `models/nn_sales_forecast.h5`")
+
+st.markdown("---")
+
 # Detailed Data Table
 st.subheader("📋 Detailed Sales Data")
 
-# Display options
 show_rows = st.slider("Number of rows to display", 10, 100, 20)
 
 display_df = filtered_df[[
@@ -500,86 +715,11 @@ st.download_button(
     mime="text/csv"
 )
 
+# Footer
 st.markdown("---")
-st.subheader("🔮 Predictive Sales Forecast (Neural Network)")
-
-model = load_forecast_model()
-X_pred, y_actual, monthly_df = prepare_forecast_data(filtered_df)
-
-# Forecast horizon
-forecast_months = st.slider(
-    "Select forecast horizon (months)",
-    min_value=1,
-    max_value=12,
-    value=6
-)
-
-# Model predictions (historical)
-historical_preds = model.predict(X_pred).flatten()
-
-# Future forecasting (naive forward projection)
-last_row = X_pred.iloc[-1].values
-future_preds = []
-
-for i in range(forecast_months):
-    pred = model.predict(last_row.reshape(1, -1))[0][0]
-    future_preds.append(pred)
-
-# Create future date index
-last_year = monthly_df.iloc[-1]["Year"]
-last_month = monthly_df.iloc[-1]["Month"]
-
-future_dates = pd.date_range(
-    start=f"{int(last_year)}-{int(last_month)}-01",
-    periods=forecast_months + 1,
-    freq="M"
-)[1:]
-
-# Plot
-fig_forecast = go.Figure()
-
-fig_forecast.add_trace(go.Scatter(
-    x=pd.to_datetime(monthly_df["Year"].astype(str) + "-" + monthly_df["Month"].astype(str)),
-    y=y_actual,
-    name="Actual Sales",
-    line=dict(color="#ffffff", width=2)
-))
-
-fig_forecast.add_trace(go.Scatter(
-    x=pd.to_datetime(monthly_df["Year"].astype(str) + "-" + monthly_df["Month"].astype(str)),
-    y=historical_preds,
-    name="Predicted Sales",
-    line=dict(color="#00ff00", width=3, dash="dot")
-))
-
-fig_forecast.add_trace(go.Scatter(
-    x=future_dates,
-    y=future_preds,
-    name="Forecast",
-    line=dict(color="#00ff00", width=3),
-    mode="lines+markers"
-))
-
-fig_forecast.update_layout(
-    height=450,
-    plot_bgcolor="#000000",
-    paper_bgcolor="#000000",
-    font=dict(color="#ffffff"),
-    hovermode="x unified",
-    legend=dict(orientation="h", y=1.1)
-)
-
-fig_forecast.update_xaxes(
-    showgrid=True,
-    gridcolor="#333333",
-    color="#ffffff"
-)
-
-fig_forecast.update_yaxes(
-    showgrid=True,
-    gridcolor="#333333",
-    color="#ffffff",
-    title="Revenue ($)"
-)
-
-st.plotly_chart(fig_forecast, use_container_width=True)
+st.markdown("""
+<div style="text-align: center; color: #888; padding: 2rem 0;">
+    <p>Nike Sales Dashboard | Using Data analytics & Neural Networks for predicting sales</p>
+    <p style="font-size: 0.8rem;">Data-driven insights for strategic decision making</p>
+</div>
+""", unsafe_allow_html=True)
