@@ -1,0 +1,179 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual Environments
+.venv/
+venv/
+ENV/
+env/
+.virtualenv/
+
+# PyCharm
+.idea/
+*.iml
+*.iws
+.idea_modules/
+
+# VS Code
+.vscode/
+*.code-workspace
+
+# Jupyter Notebook
+.ipynb_checkpoints/
+*.ipynb
+
+# IPython
+profile_default/
+ipython_config.py
+
+# pyenv
+.python-version
+
+# Environments
+.env
+.env.local
+.env.*.local
+
+# TensorFlow / Keras
+*.h5
+*.hdf5
+*.pb
+checkpoints/
+logs/
+tensorboard/
+
+# Except the trained model we want to keep
+!models/nn_sales_forecast_fixed.keras
+!models/nn_sales_forecast.h5
+
+# Scikit-learn
+*.pkl
+*.joblib
+
+# Data files (uncomment if you don't want to track data)
+# data/*.csv
+# data/*.xlsx
+# data/*.json
+
+# Large files
+*.zip
+*.tar.gz
+*.rar
+
+# Plots and Images (keep only essential ones)
+*.png
+*.jpg
+*.jpeg
+*.gif
+!assets/*.png
+!assets/*.jpg
+!models/forecast_results_fixed.png
+
+# OS specific
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+desktop.ini
+
+# Streamlit
+.streamlit/secrets.toml
+.streamlit/config.toml
+
+# Logs
+*.log
+logs/
+*.out
+
+# Temporary files
+*.tmp
+*.temp
+*.swp
+*.swo
+*~
+
+# Cache
+.cache/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Coverage reports
+htmlcov/
+.coverage
+.coverage.*
+coverage.xml
+*.cover
+
+# Documentation builds
+docs/_build/
+site/
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+
+# Backup files
+*.bak
+*.backup
+
+# System files
+*.lnk
+
+# Node modules (if using any JS tools)
+node_modules/
+
+# Package files
+*.tar
+*.gz
+
+# Editor backups
+*~
+\#*\#
+.#*
+
+# Project specific
+results/
+experiments/
+scratch/
+old/
+deprecated/
+archive/
+
+# Credentials and secrets
+secrets/
+credentials/
+*.key
+*.pem
+*.cer
+*.crt
+api_keys.txt
+
+# Local configuration
+local_settings.py
+config.local.py
