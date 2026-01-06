@@ -1,6 +1,6 @@
-# 📊 NIKE SALES ANALYSIS DASHBOARD
 
-![Nike Logo](https://upload.wikimedia.org/wikipedia/commons/a/a6/Logo_NIKE.svg)
+# <img src="https://upload.wikimedia.org/wikipedia/commons/a/a6/Logo_NIKE.svg" alt="Nike Logo" width="100"/> NIKE PREDICTIVE SALES ANALYSIS DASHBOARD
+
 
 Welcome to the Nike Sales Analysis Dashboard repository! This comprehensive project leverages advanced machine learning techniques, neural network forecasting, and interactive data visualization to deliver actionable insights into Nike's sales performance, trends, and future projections.
 
@@ -141,7 +141,6 @@ The exploratory analysis phase uncovered critical insights through four key visu
 
 ### **2. Regional Performance Distribution**
 - **Observation:** Revenue distribution varies significantly across regions
-- **Top Performer:** [Region data extracted from your dataset]
 - **Insight:** Geographic expansion opportunities and market penetration strategies
 
 ### **3. Top 10 Products by Revenue**
@@ -260,43 +259,6 @@ This project addresses critical business questions through data-driven analysis:
     - Demand forecasts optimize stock management
 
 ---
-
-## 📊 SUMMARY OF FINDINGS
-
-### **Revenue Insights**
-- **Total Revenue (2020-2021):** $X,XXX,XXX across all transactions
-- **Average Transaction Value:** $XXX per order
-- **Revenue Range:** Monthly sales vary from $43,098 to $415,285
-- **Growth Pattern:** [Increasing/Stable/Seasonal] trend observed
-
-### **Product Performance**
-- **Top Product Category:** [Identified from top 10 analysis]
-- **Product Concentration:** Top 10 products account for XX% of total revenue
-- **Price Point Analysis:** Average price per unit: $XX.XX
-- **Volume Leaders:** Highest volume products identified for inventory focus
-
-### **Geographic Distribution**
-- **Leading Region:** [Region] with XX% market share
-- **Growth Opportunities:** [Regions] showing expansion potential
-- **Regional Preferences:** Product mix varies by geography
-
-### **Sales Channel Dynamics**
-- **Dominant Channel:** [In-store/Online/Outlet] contributes XX% of revenue
-- **Channel Growth:** Online sales showing [trend description]
-- **Customer Behavior:** Multi-channel customers exhibit higher lifetime value
-
-### **Temporal Patterns**
-- **Peak Months:** [Months] consistently show highest sales
-- **Seasonal Variations:** Q[X] typically strongest quarter
-- **Year-over-Year Growth:** XX% increase from 2020 to 2021
-
-### **Predictive Model Insights**
-- **Forecast Accuracy:** Model achieves XX% accuracy on test data
-- **Future Trend:** Predicted [growth/decline/stability] in coming months
-- **Confidence Level:** 95% of predictions fall within $XX,XXX range
-
----
-
 ## 🚀 INSTALLATION & SETUP
 
 ### **Prerequisites**
@@ -409,22 +371,6 @@ streamlit run app.py
 5. **Data Export:**
    - Download filtered data as CSV
    - Detailed transaction table
-
----
-
-## 📸 DASHBOARD SCREENSHOTS
-
-### Main Dashboard View
-![Dashboard Overview](screenshots/dashboard_main.png)
-*Comprehensive view of KPIs, trends, and regional distribution*
-
-### Sales Forecast Section
-![Forecast View](screenshots/forecast_section.png)
-*Neural network predictions with confidence intervals*
-
-### Detailed Analytics
-![Analytics View](screenshots/detailed_analytics.png)
-*Product performance and sales channel analysis*
 
 ---
 
@@ -621,27 +567,6 @@ Based on the comprehensive analysis, we recommend:
 
 ---
 
-## 🤝 CONTRIBUTING
-
-We welcome contributions from the community! Here's how you can help:
-
-### **Ways to Contribute**
-
-1. **Report Bugs:** Open an issue with detailed description
-2. **Suggest Features:** Share your ideas for enhancements
-3. **Submit Pull Requests:** Contribute code improvements
-4. **Improve Documentation:** Help make docs clearer
-5. **Share Feedback:** Tell us about your experience
-
-### **Contribution Guidelines**
-
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/AmazingFeature`)
-3. Commit your changes (`git commit -m 'Add some AmazingFeature'`)
-4. Push to the branch (`git push origin feature/AmazingFeature`)
-5. Open a Pull Request
-
----
 
 ## 📝 LICENSE
 
@@ -660,6 +585,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - TensorFlow and Keras teams for deep learning frameworks
 - Streamlit for interactive dashboard capabilities
 - The open-source community for invaluable tools and libraries
+- https://www.kaggle.com/datasets/krishnavamsis/nike-sales for database
 
 ---
 
