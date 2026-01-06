@@ -3,6 +3,9 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
+from pathlib import Path
+from tensorflow.keras.models import load_model
+import numpy as np
 
 st.set_page_config(
     page_title="Nike Sales Dashboard",
@@ -11,64 +14,144 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Custom CSS for modern styling
+# Custom CSS for Nike dark theme
 st.markdown("""
 <style>
-    /* Main background */
+    /* App background - Nike black */
     .stApp {
-        background-color: #f8f9fa;
+        background-color: #000000;
+        color: #ffffff;
     }
 
-    /* Metrics styling */
-    [data-testid="stMetricValue"] {
-        font-size: 28px;
-        font-weight: 600;
-    }
-
-    /* Card-like containers */
-    .element-container {
-        background-color: white;
-        border-radius: 8px;
-    }
-
-    /* Header styling */
-    h1 {
-        color: #1f2937;
-        font-weight: 700;
-        padding-bottom: 1rem;
-    }
-
-    h2, h3 {
-        color: #374151;
-        font-weight: 600;
-        padding-top: 1rem;
-    }
-
-    /* Sidebar styling */
-    [data-testid="stSidebar"] {
-        background-color: #ffffff;
-    }
-
-    /* Remove extra padding */
+    /* Main content container */
     .block-container {
         padding-top: 2rem;
         padding-bottom: 2rem;
+        color: #ffffff;
+    }
+
+    /* Sidebar - Dark gray */
+    [data-testid="stSidebar"] {
+        background-color: #111111;
+        color: #ffffff;
+    }
+
+    [data-testid="stSidebar"] [data-testid="stMarkdownContainer"] {
+        color: #ffffff;
+    }
+
+    /* Headers */
+    h1, h2, h3, h4, h5, h6 {
+        color: #ffffff !important;
+        font-weight: 700;
+    }
+
+    /* Metrics */
+    [data-testid="stMetricValue"] {
+        font-size: 32px;
+        font-weight: 700;
+        color: #ffffff;
+    }
+
+    [data-testid="stMetricLabel"] {
+        color: #cccccc;
+        font-weight: 500;
+        font-size: 14px;
+    }
+
+    [data-testid="stMetricDelta"] {
+        color: #10b981;
+    }
+
+    /* Metric containers */
+    [data-testid="metric-container"] {
+        background-color: #1a1a1a;
+        border: 1px solid #333333;
+        border-radius: 8px;
+        padding: 1.5rem 1rem;
+    }
+
+    /* Divider */
+    hr {
+        border-color: #333333;
+        margin: 2rem 0;
+    }
+
+    /* Info boxes */
+    .stAlert {
+        background-color: #1a1a1a;
+        color: #ffffff;
+        border-left: 4px solid #3b82f6;
+    }
+
+    /* Slider */
+    .stSlider {
+        color: #ffffff;
+    }
+
+    /* Select boxes and inputs */
+    .stSelectbox label, .stDateInput label {
+        color: #ffffff !important;
+    }
+
+    /* Download button */
+    .stDownloadButton button {
+        background-color: #ffffff;
+        color: #000000;
+        font-weight: 600;
+        border: none;
+        padding: 0.5rem 2rem;
+        border-radius: 4px;
+    }
+
+    .stDownloadButton button:hover {
+        background-color: #f5f5f5;
+        border: none;
+    }
+
+    /* Dataframe styling */
+    .stDataFrame {
+        border: 1px solid #333333;
+    }
+
+    /* Text color fix for all elements */
+    p, label, span {
+        color: #ffffff;
     }
 </style>
 """, unsafe_allow_html=True)
 
 
-# Load data
 @st.cache_data
 def load_data():
-    df = pd.read_csv("../data/nike_sales.csv", parse_dates=["Invoice Date"])
-    df["Year"] = df["Invoice Date"].dt.year
-    df["Month"] = df["Invoice Date"].dt.month
-    df["Month-Year"] = df["Invoice Date"].dt.to_period("M").astype(str)
-    return df
+    BASE_DIR = Path(__file__).resolve().parent.parent
+    data_path = BASE_DIR / "data" / "nike_sales.csv"
+
+    data = pd.read_csv(data_path)
+
+    # Force datetime conversion
+    data["Invoice Date"] = pd.to_datetime(
+        data["Invoice Date"],
+        errors="coerce"
+    )
+
+    # Drop rows with invalid dates
+    data = data.dropna(subset=["Invoice Date"])
+
+    data["Year"] = data["Invoice Date"].dt.year
+    data["Month"] = data["Invoice Date"].dt.month
+    data["Month-Year"] = data["Invoice Date"].dt.to_period("M").astype(str)
+
+    return data
 
 
 df = load_data()
+
+@st.cache_resource
+def load_forecast_model():
+    BASE_DIR = Path(__file__).resolve().parent.parent
+    model_path = BASE_DIR / "models" / "nn_sales_forecast.h5"
+    return load_model(model_path)
 
 # Sidebar filters
 with st.sidebar:
@@ -110,6 +193,30 @@ if selected_region != "All":
 
 if selected_product != "All":
     filtered_df = filtered_df[filtered_df["Product"] == selected_product]
+
+def prepare_forecast_data(data):
+    monthly = (
+        data.groupby(["Year", "Month"])
+        .agg({
+            "Units Sold": "sum",
+            "Price per Unit": "mean",
+            "Total Sales": "sum"
+        })
+        .reset_index()
+        .sort_values(["Year", "Month"])
+    )
+
+    # Scale features manually (same logic as training)
+    monthly["Units Sold"] = monthly["Units Sold"] / monthly["Units Sold"].max()
+    monthly["Price per Unit"] = monthly["Price per Unit"] / monthly["Price per Unit"].max()
+    monthly["Month"] = monthly["Month"] / 12
+    monthly["Quarter"] = ((monthly["Month"] * 12 - 1) // 3 + 1) / 4
+
+    X = monthly[["Units Sold", "Price per Unit", "Month", "Quarter"]]
+    y = monthly["Total Sales"]
+
+    return X, y, monthly
+
 
 # Main dashboard
 st.title("📊 Nike Sales Performance Dashboard")
@@ -172,9 +279,9 @@ with col1:
             x=monthly_sales["Month-Year"],
             y=monthly_sales["Total Sales"],
             name="Revenue",
-            line=dict(color="#3b82f6", width=3),
+            line=dict(color="#00ff00", width=3),
             fill='tozeroy',
-            fillcolor='rgba(59, 130, 246, 0.1)'
+            fillcolor='rgba(0, 255, 0, 0.1)'
         ),
         secondary_y=False
     )
@@ -184,7 +291,7 @@ with col1:
             x=monthly_sales["Month-Year"],
             y=monthly_sales["Units Sold"],
             name="Units Sold",
-            line=dict(color="#10b981", width=2, dash="dot")
+            line=dict(color="#ffffff", width=2, dash="dot")
         ),
         secondary_y=True
     )
@@ -192,15 +299,38 @@ with col1:
     fig.update_layout(
         height=400,
         hovermode="x unified",
-        plot_bgcolor="white",
-        paper_bgcolor="white",
+        plot_bgcolor="#000000",
+        paper_bgcolor="#000000",
         margin=dict(l=0, r=0, t=0, b=0),
-        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+        legend=dict(
+            orientation="h",
+            yanchor="bottom",
+            y=1.02,
+            xanchor="right",
+            x=1,
+            font=dict(color="#ffffff")
+        ),
+        font=dict(color="#ffffff")
     )
 
-    fig.update_xaxes(showgrid=True, gridwidth=1, gridcolor='#f3f4f6')
-    fig.update_yaxes(showgrid=True, gridwidth=1, gridcolor='#f3f4f6', secondary_y=False)
-    fig.update_yaxes(showgrid=False, secondary_y=True)
+    fig.update_xaxes(
+        showgrid=True,
+        gridwidth=1,
+        gridcolor='#333333',
+        color="#ffffff"
+    )
+    fig.update_yaxes(
+        showgrid=True,
+        gridwidth=1,
+        gridcolor='#333333',
+        secondary_y=False,
+        color="#ffffff"
+    )
+    fig.update_yaxes(
+        showgrid=False,
+        secondary_y=True,
+        color="#ffffff"
+    )
 
     st.plotly_chart(fig, use_container_width=True)
 
@@ -215,19 +345,22 @@ with col2:
         values="Total Sales",
         names="Region",
         hole=0.4,
-        color_discrete_sequence=px.colors.qualitative.Set3
+        color_discrete_sequence=['#00ff00', '#ffffff', '#888888', '#444444', '#cccccc']
     )
 
     fig2.update_layout(
         height=400,
         showlegend=True,
         margin=dict(l=0, r=0, t=0, b=0),
-        paper_bgcolor="white"
+        paper_bgcolor="#000000",
+        font=dict(color="#ffffff"),
+        legend=dict(font=dict(color="#ffffff"))
     )
 
     fig2.update_traces(
         textposition='inside',
         textinfo='percent+label',
+        textfont=dict(color="#000000", size=12, family="Arial Black"),
         hovertemplate='<b>%{label}</b><br>Revenue: $%{value:,.0f}<br>Share: %{percent}'
     )
 
@@ -255,25 +388,34 @@ with col1:
         y="Product",
         orientation="h",
         color="Total Sales",
-        color_continuous_scale="Blues"
+        color_continuous_scale=[[0, "#444444"], [0.5, "#888888"], [1, "#00ff00"]]
     )
 
     fig3.update_layout(
         height=400,
         showlegend=False,
-        plot_bgcolor="white",
-        paper_bgcolor="white",
+        plot_bgcolor="#000000",
+        paper_bgcolor="#000000",
         margin=dict(l=0, r=0, t=0, b=0),
         xaxis_title="Revenue ($)",
-        yaxis_title=""
+        yaxis_title="",
+        font=dict(color="#ffffff")
     )
 
     fig3.update_traces(
         hovertemplate='<b>%{y}</b><br>Revenue: $%{x:,.0f}<extra></extra>'
     )
 
-    fig3.update_xaxes(showgrid=True, gridwidth=1, gridcolor='#f3f4f6')
-    fig3.update_yaxes(showgrid=False)
+    fig3.update_xaxes(
+        showgrid=True,
+        gridwidth=1,
+        gridcolor='#333333',
+        color="#ffffff"
+    )
+    fig3.update_yaxes(
+        showgrid=False,
+        color="#ffffff"
+    )
 
     st.plotly_chart(fig3, use_container_width=True)
 
@@ -292,24 +434,34 @@ with col2:
             x=sales_method["Sales Method"],
             y=sales_method["Total Sales"],
             name="Revenue",
-            marker_color="#3b82f6",
+            marker_color="#00ff00",
             text=sales_method["Total Sales"],
             texttemplate='$%{text:,.0f}',
-            textposition='outside'
+            textposition='outside',
+            textfont=dict(color="#ffffff")
         ))
 
         fig4.update_layout(
             height=400,
-            plot_bgcolor="white",
-            paper_bgcolor="white",
+            plot_bgcolor="#000000",
+            paper_bgcolor="#000000",
             margin=dict(l=0, r=0, t=0, b=0),
             xaxis_title="",
             yaxis_title="Revenue ($)",
-            showlegend=False
+            showlegend=False,
+            font=dict(color="#ffffff")
         )
 
-        fig4.update_xaxes(showgrid=False)
-        fig4.update_yaxes(showgrid=True, gridwidth=1, gridcolor='#f3f4f6')
+        fig4.update_xaxes(
+            showgrid=False,
+            color="#ffffff"
+        )
+        fig4.update_yaxes(
+            showgrid=True,
+            gridwidth=1,
+            gridcolor='#333333',
+            color="#ffffff"
+        )
 
         st.plotly_chart(fig4, use_container_width=True)
     else:
@@ -347,3 +499,87 @@ st.download_button(
     file_name="nike_sales_filtered.csv",
     mime="text/csv"
 )
+
+st.markdown("---")
+st.subheader("🔮 Predictive Sales Forecast (Neural Network)")
+
+model = load_forecast_model()
+X_pred, y_actual, monthly_df = prepare_forecast_data(filtered_df)
+
+# Forecast horizon
+forecast_months = st.slider(
+    "Select forecast horizon (months)",
+    min_value=1,
+    max_value=12,
+    value=6
+)
+
+# Model predictions (historical)
+historical_preds = model.predict(X_pred).flatten()
+
+# Future forecasting (naive forward projection)
+last_row = X_pred.iloc[-1].values
+future_preds = []
+
+for i in range(forecast_months):
+    pred = model.predict(last_row.reshape(1, -1))[0][0]
+    future_preds.append(pred)
+
+# Create future date index
+last_year = monthly_df.iloc[-1]["Year"]
+last_month = monthly_df.iloc[-1]["Month"]
+
+future_dates = pd.date_range(
+    start=f"{int(last_year)}-{int(last_month)}-01",
+    periods=forecast_months + 1,
+    freq="M"
+)[1:]
+
+# Plot
+fig_forecast = go.Figure()
+
+fig_forecast.add_trace(go.Scatter(
+    x=pd.to_datetime(monthly_df["Year"].astype(str) + "-" + monthly_df["Month"].astype(str)),
+    y=y_actual,
+    name="Actual Sales",
+    line=dict(color="#ffffff", width=2)
+))
+
+fig_forecast.add_trace(go.Scatter(
+    x=pd.to_datetime(monthly_df["Year"].astype(str) + "-" + monthly_df["Month"].astype(str)),
+    y=historical_preds,
+    name="Predicted Sales",
+    line=dict(color="#00ff00", width=3, dash="dot")
+))
+
+fig_forecast.add_trace(go.Scatter(
+    x=future_dates,
+    y=future_preds,
+    name="Forecast",
+    line=dict(color="#00ff00", width=3),
+    mode="lines+markers"
+))
+
+fig_forecast.update_layout(
+    height=450,
+    plot_bgcolor="#000000",
+    paper_bgcolor="#000000",
+    font=dict(color="#ffffff"),
+    hovermode="x unified",
+    legend=dict(orientation="h", y=1.1)
+)
+
+fig_forecast.update_xaxes(
+    showgrid=True,
+    gridcolor="#333333",
+    color="#ffffff"
+)
+
+fig_forecast.update_yaxes(
+    showgrid=True,
+    gridcolor="#333333",
+    color="#ffffff",
+    title="Revenue ($)"
+)
+
+st.plotly_chart(fig_forecast, use_container_width=True)

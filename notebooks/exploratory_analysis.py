@@ -1,58 +1,56 @@
+"""
+Nike Sales Feature Engineering
+Author: Your Name
+"""
+
 import pandas as pd
-import numpy as np
-import matplotlib.pyplot as plt
-import seaborn as sns
+from sklearn.preprocessing import MinMaxScaler
+from pathlib import Path
+import pandas as pd
 
-plt.rcParams["figure.figsize"] = (10,6)
+BASE_DIR = Path(__file__).resolve().parent.parent
+DATA_PATH = BASE_DIR / "data" / "nike_sales.csv"
 
-df = pd.read_csv("../data/nike_sales.csv", parse_dates=["Invoice Date"])
-df.head()
+def build_features():
+    df = pd.read_csv(DATA_PATH, parse_dates=["Invoice Date"])
 
-df.info()
-df.describe()
+    # Basic Cleaning
+    df = df[df["Units Sold"] > 0]
+    df = df[df["Total Sales"] > 0]
 
-df.isnull().sum()
+    # Time-Based Features
+    df["Year"] = df["Invoice Date"].dt.year
+    df["Month"] = df["Invoice Date"].dt.month
+    df["Quarter"] = df["Invoice Date"].dt.quarter
+    df["Day"] = df["Invoice Date"].dt.day
 
-#Feature Extraction
-df["Year"] = df["Invoice Date"].dt.year
-df["Month"] = df["Invoice Date"].dt.month
-df["Quarter"] = df["Invoice Date"].dt.quarter
+    # Monthly Aggregation
+    monthly_df = (
+        df.groupby(["Year", "Month"])
+        .agg({
+            "Units Sold": "sum",
+            "Total Sales": "sum",
+            "Price per Unit": "mean"
+        })
+        .reset_index()
+    )
 
-#Revenue Trend Over Time
-monthly_sales = (
-    df.groupby(df["Invoice Date"].dt.to_period("M"))
-    ["Total Sales"]
-    .sum()
-    .reset_index()
-)
+    # Scaling
+    scaler = MinMaxScaler()
+    features = ["Units Sold", "Price per Unit", "Month", "Quarter"]
+    monthly_df[features] = scaler.fit_transform(monthly_df[features])
 
-monthly_sales["Invoice Date"] = monthly_sales["Invoice Date"].dt.to_timestamp()
+    # Train/Test Split
+    X = monthly_df[features]
+    y = monthly_df["Total Sales"]
 
-plt.plot(monthly_sales["Invoice Date"], monthly_sales["Total Sales"])
-plt.title("Monthly Revenue Trend")
-plt.xlabel("Date")
-plt.ylabel("Total Sales")
-plt.show()
+    split = int(len(monthly_df) * 0.8)
+    X_train, X_test = X[:split], X[split:]
+    y_train, y_test = y[:split], y[split:]
 
-# Regional Performance
-region_sales = df.groupby("Region")["Total Sales"].sum().sort_values()
+    print("Feature engineering complete.")
+    return X_train, X_test, y_train, y_test
 
-region_sales.plot(kind="barh", title="Sales by Region")
-plt.show()
 
-#Product Performance
-top_products = (
-    df.groupby("Product")["Total Sales"]
-    .sum()
-    .sort_values(ascending=False)
-    .head(10)
-)
-
-top_products.plot(kind="bar", title="Top 10 Products by Revenue")
-plt.xticks(rotation=45)
-plt.show()
-
-#Sales Method Analysis
-sns.boxplot(data=df, x="Sales Method", y="Total Sales")
-plt.title("Sales Distribution by Method")
-plt.show()
+if __name__ == "__main__":
+    build_features()

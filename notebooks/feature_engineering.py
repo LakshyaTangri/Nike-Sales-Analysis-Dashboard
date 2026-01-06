@@ -1,4 +1,4 @@
-df = pd.read_csv("../data/nike_sales.csv", parse_dates=["Invoice Date"])
+df = pd.read_csv("D:\site\Nike-Sales-Analysis-Dashboard\data\nike_sales.csv", parse_dates=["Invoice Date"])
 
 df = df[df["Units Sold"] > 0]
 df = df[df["Total Sales"] > 0]
