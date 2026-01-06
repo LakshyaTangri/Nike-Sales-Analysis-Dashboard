@@ -31,6 +31,8 @@ env/
 
 # PyCharm
 .idea/
+.idea
+
 *.iml
 *.iws
 .idea_modules/
